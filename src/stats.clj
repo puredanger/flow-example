@@ -138,16 +138,20 @@
    (println prefix msg)
    [state nil]))
 
+(defn create-flow
+  []
+  (flow/create-flow
+    {:procs {:generator {:args {:min 0 :max 12 :wait 500} :proc (flow/process #'source)}
+             :aggregator {:args {:min 1 :max 10} :proc (flow/process #'aggregator)}
+             :scheduler {:args {:wait 3000} :proc (flow/process #'scheduler)}
+             :notifier {:args {:prefix "Alert: "} :proc (flow/process #'printer)
+                        :chan-opts {:in {:buf-or-n (a/sliding-buffer 3)}}}}
+     :conns [[[:generator :out] [:aggregator :stat]]
+             [[:scheduler :out] [:aggregator :poke]]
+             [[:aggregator :alert] [:notifier :in]]]}))
+
 (comment
-  (def f (flow/create-flow
-           {:procs {:generator {:args {:min 0 :max 12 :wait 500} :proc (flow/process #'source)}
-                    :aggregator {:args {:min 1 :max 10} :proc (flow/process #'aggregator)}
-                    :scheduler {:args {:wait 3000} :proc (flow/process #'scheduler)}
-                    :notifier {:args {:prefix "Alert: "} :proc (flow/process #'printer)
-                               :chan-opts {:in {:buf-or-n (a/sliding-buffer 3)}}}}
-            :conns [[[:generator :out] [:aggregator :stat]]
-                    [[:scheduler :out] [:aggregator :poke]]
-                    [[:aggregator :alert] [:notifier :in]]]}))
+  (def f (create-flow))
   (def chs (flow/start f))
   (flow/resume f)
   (flow/pause f)
