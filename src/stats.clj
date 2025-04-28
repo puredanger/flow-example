@@ -55,8 +55,7 @@
                 :max "Max value, alert if higher"}
        :ins {:stat "Channel to receive stat values"
              :poke "Channel to poke when it is time to report a window of data to the log"}
-       :outs {:log "Log batch message for average in window {:avg avg, :count n}"
-              :alert "Notify of value out of range {:val value, :error :high|:low"}
+       :outs {:alert "Notify of value out of range {:val value, :error :high|:low"}
        :workload :compute
        })
 
@@ -68,7 +67,6 @@
 
   ;; transform
   ([{:keys [min max vals] :as state} input-id msg]
-   ;(println "agg transform" in msg)
    (case input-id
      :stat (let [state' (assoc state :vals (conj vals msg))
                  msgs (cond
@@ -77,10 +75,10 @@
                         :else nil)]
              [state' msgs])
      :poke [(assoc state :vals [])
-            {:log (if (empty? vals)
-                    [{:count 0}]
-                    [{:avg (/ (double (reduce + vals)) (count vals))
-                      :count (count vals)}])}]
+            {::flow/report (if (empty? vals)
+                             [{:count 0}]
+                             [{:avg (/ (double (reduce + vals)) (count vals))
+                               :count (count vals)}])}]
      [state nil])))
 
 (comment
@@ -143,15 +141,12 @@
 (comment
   (def f (flow/create-flow
            {:procs {:generator {:args {:min 0 :max 12 :wait 500} :proc (flow/process #'source)}
-                    :aggregator {:args {:min 1 :max 11} :proc (flow/process #'aggregator)}
+                    :aggregator {:args {:min 1 :max 10} :proc (flow/process #'aggregator)}
                     :scheduler {:args {:wait 3000} :proc (flow/process #'scheduler)}
-                    :logger {:args {:prefix "Logged: "} :proc (flow/process #'printer)
-                             :chan-opts {:in {:buf-or-n 4}}}
                     :notifier {:args {:prefix "Alert: "} :proc (flow/process #'printer)
                                :chan-opts {:in {:buf-or-n (a/sliding-buffer 3)}}}}
             :conns [[[:generator :out] [:aggregator :stat]]
                     [[:scheduler :out] [:aggregator :poke]]
-                    [[:aggregator :log] [:logger :in]]
                     [[:aggregator :alert] [:notifier :in]]]}))
   (def chs (flow/start f))
   (flow/resume f)
@@ -163,7 +158,7 @@
 
   @(flow/inject f [:aggregator :poke] [true])
   @(flow/inject f [:aggregator :stat] ["abc1000"]) ;; trigger an alert
-  @(flow/inject f [:logger :in] [:sandwich])
+  @(flow/inject f [:notifier :in] [:sandwich])
 
   (def report-chan (:report-chan chs))
   (flow/ping f)
